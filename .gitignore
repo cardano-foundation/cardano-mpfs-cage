@@ -8,3 +8,4 @@ lean/build/
 
 # LLM investigation notes (local only)
 .llm/
+site/
