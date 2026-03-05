@@ -15,12 +15,11 @@ category:      Blockchain
 build-type:    Simple
 
 library
-  hs-source-dirs:  lib
-  default-language: GHC2021
+  hs-source-dirs:     lib
+  default-language:   GHC2021
   ghc-options:
     -Wall -Werror -Wunused-imports -Wunused-packages
-    -Wmissing-export-lists -Wname-shadowing
-    -Wredundant-constraints
+    -Wmissing-export-lists -Wname-shadowing -Wredundant-constraints
 
   exposed-modules:
     Cardano.MPFS.Cage.AssetName
@@ -28,7 +27,7 @@ library
     Cardano.MPFS.Cage.Types
 
   build-depends:
-    , base           >=4.14 && <5
+    , base         >=4.14 && <5
     , bytestring
     , containers
     , crypton
@@ -43,15 +42,14 @@ library
     RecordWildCards
 
 executable cage-test-vectors
-  hs-source-dirs:   app/test-vectors
-  main-is:          Main.hs
-  default-language: GHC2021
-  ghc-options:      -Wall -Werror
-
+  hs-source-dirs:     app/test-vectors
+  main-is:            Main.hs
+  default-language:   GHC2021
+  ghc-options:        -Wall -Werror
   build-depends:
     , aeson
     , aeson-pretty
-    , base                >=4.14 && <5
+    , base               >=4.14 && <5
     , base16-bytestring
     , bytestring
     , cardano-mpfs-cage
@@ -66,22 +64,18 @@ executable cage-test-vectors
     OverloadedStrings
 
 test-suite cage-tests
-  type:             exitcode-stdio-1.0
-  hs-source-dirs:   test
-  main-is:          Main.hs
-  default-language: GHC2021
-  ghc-options:      -Wall -Werror
-
-  other-modules:
-    Cardano.MPFS.Cage.TypesSpec
-
+  type:               exitcode-stdio-1.0
+  hs-source-dirs:     test
+  main-is:            Main.hs
+  default-language:   GHC2021
+  ghc-options:        -Wall -Werror
+  other-modules:      Cardano.MPFS.Cage.TypesSpec
   build-depends:
-    , base                >=4.14 && <5
+    , base               >=4.14 && <5
     , bytestring
     , cardano-mpfs-cage
     , hspec
     , plutus-core
     , plutus-tx
 
-  default-extensions:
-    OverloadedStrings
+  default-extensions: OverloadedStrings
