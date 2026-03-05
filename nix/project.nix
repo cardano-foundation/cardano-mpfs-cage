@@ -14,7 +14,7 @@ let
       pkgs.nixfmt-classic
     ];
     shellHook = ''
-      echo "Entering cardano-mpfs-cage dev shell"
+      echo "Entering cardano-mpfs-cage dev shell" >&2
     '';
   };
 
