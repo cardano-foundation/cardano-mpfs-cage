@@ -31,6 +31,7 @@ abbrev POSIXTime := Int
 structure Interval where
   lo : POSIXTime
   hi : POSIXTime
+  wf : lo ≤ hi
 
 /-- An unspent transaction output reference. -/
 structure OutputReference where
@@ -170,6 +171,9 @@ axiom mpfApply (root : Hash) (key : Bytes) (op : Operation) (proof : Proof) : Ha
 /-- The well-known root hash of the empty trie. -/
 axiom emptyRoot : Hash
 
+/-- Derive a script address from a payment key hash. -/
+axiom addressOf : VKH → PolicyId
+
 -- ============================================================================
 -- Derived predicates
 -- ============================================================================
@@ -177,8 +181,9 @@ axiom emptyRoot : Hash
 def isSigner (tx : Transaction) (vkh : VKH) : Prop :=
   vkh ∈ tx.extraSignatories
 
-def assetName (ref : OutputReference) : AssetName :=
-  sorry  -- SHA2-256(ref.txId ++ bigEndian16(ref.index))
+/-- Derive the asset name from an output reference:
+    @SHA2-256(txId ++ bigEndian16(index))@. -/
+axiom assetName (ref : OutputReference) : AssetName
 
 -- ============================================================================
 -- 1. Token uniqueness
@@ -316,24 +321,21 @@ def burnIntegrity (policyId : PolicyId) (tokenId : TokenId) (tx : Transaction) :
 
 /-- Phases are mutually exclusive: no validity range can satisfy two phases. -/
 theorem phase_exclusivity (vr : Interval) (sa : POSIXTime) (s : State)
-    (hpt : 0 < s.processTime) (hrt : 0 < s.retractTime) :
+    (_hpt : 0 < s.processTime) (_hrt : 0 < s.retractTime) :
     ¬(inPhase1 vr sa s ∧ inPhase2 vr sa s) := by
-  intro ⟨h1, h2lo, _⟩
-  -- inPhase1 says vr.hi < sa + pt, inPhase2 says vr.lo > sa + pt - 1
-  -- Since vr.lo ≤ vr.hi, we get sa + pt - 1 < vr.lo ≤ vr.hi < sa + pt
-  -- i.e. sa + pt - 1 < sa + pt which is trivially true, but we also need
-  -- vr.lo ≤ vr.hi which gives the contradiction.
-  sorry  -- requires Interval well-formedness axiom (lo ≤ hi)
+  intro ⟨h1, h2⟩
+  have hwf := vr.wf
+  unfold inPhase1 inPhase2 Interval.isEntirelyBefore Interval.isEntirelyAfter POSIXTime at *
+  omega
 
 /-- Phase 2 and rejectability (Phase 3 branch) are mutually exclusive. -/
 theorem phase2_reject_exclusive (vr : Interval) (sa : POSIXTime) (s : State) :
     ¬(inPhase2 vr sa s ∧
       vr.isEntirelyAfter (sa + s.processTime + s.retractTime - 1)) := by
-  intro ⟨⟨_, h2hi⟩, h3lo⟩
-  -- h2hi: vr.hi < sa + pt + rt
-  -- h3lo: vr.lo > sa + pt + rt - 1, i.e. vr.lo ≥ sa + pt + rt
-  -- Since lo ≤ hi: sa + pt + rt ≤ vr.lo ≤ vr.hi < sa + pt + rt → contradiction
-  sorry
+  intro ⟨h2, h3lo⟩
+  have hwf := vr.wf
+  unfold inPhase2 Interval.isEntirelyBefore Interval.isEntirelyAfter POSIXTime at *
+  omega
 
 -- ============================================================================
 -- 14. Reject (DDoS protection)
@@ -360,7 +362,7 @@ structure ValidReject (state : State)
   /-- Refunds: each requester receives inputLovelace - fee. -/
   refunds   : ∀ (pair : TxInput × Request), pair ∈ requests →
               ∃ o ∈ tx.outputs,
-                o.address = sorry ∧  -- requestOwner's address
+                o.address = addressOf pair.2.requestOwner ∧
                 o.value ≥ pair.1.value - pair.2.fee
 
 -- ============================================================================
@@ -411,7 +413,7 @@ def validSpend (_p : ValidatorParams) (policyId : PolicyId)
   | .Contribute stateRef, .RequestDatum req =>
       (∃ si ∈ tx.inputs, si.ref = stateRef ∧
        ∃ tid, si.token = some tid ∧ requestBound req tid)
-  | .Modify proofs, .StateDatum state =>
+  | .Modify _proofs, .StateDatum state =>
       oracleAuthorized state tx ∧
       (∃ o, tx.outputs.head? = some o ∧ tokenConfined self o) ∧
       True  -- + rootIntegrity + feeEnforced + proofConsumption (elided)
@@ -421,5 +423,5 @@ def validSpend (_p : ValidatorParams) (policyId : PolicyId)
        ∃ s, o.datum = some (CageDatum.StateDatum s) ∧ s.root = state.root)
   | .End, .StateDatum state =>
       oracleAuthorized state tx ∧
-      burnIntegrity policyId (sorry : TokenId) tx  -- token extracted from self
+      ∃ tid, self.token = some tid ∧ burnIntegrity policyId tid tx
   | _, _ => False
