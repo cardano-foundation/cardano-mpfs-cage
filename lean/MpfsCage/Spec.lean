@@ -16,10 +16,10 @@
 -- ============================================================================
 
 /-- 28-byte Ed25519 public-key hash. -/
-opaque def VKH := ByteArray
+opaque VKH : Type := ByteArray
 
 /-- 32-byte hash (SHA2-256 or Blake2b-256). -/
-opaque def Hash := ByteArray
+opaque Hash : Type := ByteArray
 
 /-- Arbitrary-length byte string used as MPF keys and values. -/
 abbrev Bytes := ByteArray
@@ -89,7 +89,7 @@ inductive MintRedeemer where
   | Burning
 
 /-- Abstract Merkle proof (opaque — verified by the MPF library). -/
-opaque def Proof := Unit
+opaque Proof : Type := Unit
 
 inductive SpendRedeemer where
   | End
@@ -208,7 +208,7 @@ structure ValidMint (policyId : PolicyId) (tx : Transaction)
   toScript  : ∃ o ∈ tx.outputs, tx.outputs.head? = some o ∧ o.address = policyId
   /-- Output datum is StateDatum with empty root. -/
   emptyInit : ∃ o ∈ tx.outputs, tx.outputs.head? = some o ∧
-              o.datum = some (CageDatum.StateDatum ⟨·, emptyRoot, ·, ·, ·⟩)
+              ∃ s : State, o.datum = some (CageDatum.StateDatum s) ∧ s.root = emptyRoot
 
 -- ============================================================================
 -- 3. Ownership & authorization
@@ -236,7 +236,7 @@ def tokenConfined (input : TxInput) (output : TxOutput) : Prop :=
 
 /-- The owner field in the output datum is unchecked during Modify —
     the current owner can transfer to a new key. -/
-def ownerTransferAllowed (inputState outputState : State) : Prop :=
+def ownerTransferAllowed (_inputState _outputState : State) : Prop :=
   True  -- no constraint on outputState.owner
 
 -- ============================================================================
@@ -306,8 +306,8 @@ def burnIntegrity (policyId : PolicyId) (tokenId : TokenId) (tx : Transaction) :
 -- 12. Token extraction
 -- ============================================================================
 
-/-- `tokenFromValue` returns `Some` iff the value contains exactly one
-    non-ADA policy with exactly one asset name. -/
+-- `tokenFromValue` returns `Some` iff the value contains exactly one
+-- non-ADA policy with exactly one asset name.
 -- (Modelled abstractly via the TxInput.token field.)
 
 -- ============================================================================
