@@ -19,6 +19,12 @@ repository cardano-haskell-packages
 
 source-repository-package
   type: git
+  location: https://github.com/paolino/aiken-codegen
+  tag: d7e34453882df3f344b279fb9b6994088dfb3fac
+  --sha256: 0rg5hqjix9bs9radzib1ppy09qamxkkqr0hdvc8qm907c21cy2g8
+
+source-repository-package
+  type: git
   location: https://github.com/paolino/rocksdb-haskell.git
   tag: a3e86b39f9510fea54abf734ee84aec33d0d683f
   --sha256: 1gjzqhf81fy3bpc79ndmx3s77x3s1gf0lsk762acbfnpfh6g1hd0

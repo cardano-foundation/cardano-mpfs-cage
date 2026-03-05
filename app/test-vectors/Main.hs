@@ -7,6 +7,30 @@
 --   validator
 module Main (main) where
 
+import Aiken.Codegen
+    ( BodyM
+    , Def (Blank, Test)
+    , Expr
+    , ModuleM
+    , bind
+    , bindAs
+    , call
+    , comment
+    , emit
+    , field
+    , hex
+    , int
+    , item
+    , list
+    , record
+    , renderModule
+    , runBody
+    , runModule
+    , useAs
+    , useFrom
+    , var
+    , (.==)
+    )
 import Cardano.MPFS.Cage.AssetName (deriveAssetName)
 import Cardano.MPFS.Cage.Proof
     ( serializeProof
@@ -24,7 +48,6 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Lazy.Char8 qualified as BL8
 import Data.Char (isAlphaNum, toLower)
-import Data.List (intercalate)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
@@ -155,11 +178,6 @@ blake2b bs =
 -- | Hex-encode a ByteString for JSON output.
 toHex :: ByteString -> Text
 toHex = T.decodeUtf8 . B16.encode
-
--- | Hex-encode as Aiken hex literal.
-aikenHex :: ByteString -> String
-aikenHex bs =
-    "#\"" ++ T.unpack (toHex bs) ++ "\""
 
 -- -----------------------------------------------------------
 -- JSON helpers
@@ -529,7 +547,7 @@ allJsonVectors =
         ++ datumEncodingVectors
 
 -- -----------------------------------------------------------
--- Aiken rendering
+-- Aiken rendering (via aiken-codegen DSL)
 -- -----------------------------------------------------------
 
 -- | Sanitize description to Aiken test name.
@@ -550,172 +568,141 @@ descToTestName desc =
         | prev = go True cs
         | otherwise = '_' : go True cs
 
--- | Render a ProofStep as Aiken syntax.
-renderStep :: ProofStep -> String
-renderStep (Branch skip neighbors) =
-    "Branch { skip: "
-        ++ show skip
-        ++ ", neighbors: "
-        ++ aikenHex neighbors
-        ++ " }"
-renderStep (Fork skip neighbor) =
-    "Fork { skip: "
-        ++ show skip
-        ++ ", neighbor: Neighbor { nibble: "
-        ++ show (neighborNibble neighbor)
-        ++ ", prefix: "
-        ++ aikenHex (neighborPrefix neighbor)
-        ++ ", root: "
-        ++ aikenHex (neighborRoot neighbor)
-        ++ " } }"
-renderStep (Leaf skip key value) =
-    "Leaf { skip: "
-        ++ show skip
-        ++ ", key: "
-        ++ aikenHex key
-        ++ ", value: "
-        ++ aikenHex value
-        ++ " }"
+-- | Convert a 'ProofStep' to an Aiken 'Expr'.
+stepToExpr :: ProofStep -> Expr
+stepToExpr (Branch skip neighbors) =
+    record "Branch" $ do
+        field "skip" $ int skip
+        field "neighbors" $ hex neighbors
+stepToExpr (Fork skip neighbor) =
+    record "Fork" $ do
+        field "skip" $ int skip
+        field "neighbor"
+            $ record "Neighbor"
+            $ do
+                field "nibble"
+                    $ int
+                    $ neighborNibble neighbor
+                field "prefix"
+                    $ hex
+                    $ neighborPrefix neighbor
+                field "root"
+                    $ hex
+                    $ neighborRoot neighbor
+stepToExpr (Leaf skip key value) =
+    record "Leaf" $ do
+        field "skip" $ int skip
+        field "key" $ hex key
+        field "value" $ hex value
 
--- | Render a proof as Aiken list literal.
-renderProof :: [ProofStep] -> String
-renderProof [] = "[]"
-renderProof steps =
-    "[\n"
-        ++ intercalate
-            ",\n"
-            ( map
-                ( \s ->
-                    "    " ++ renderStep s
-                )
-                steps
-            )
-        ++ ",\n  ]"
-
--- | Render a proof vector as Aiken test.
-proofVecToAiken :: ProofVec -> String
-proofVecToAiken v =
-    let name = descToTestName (pvDesc v)
-        steps = toProofSteps (pvProof v)
+-- | Render a proof vector as an Aiken 'Def'.
+proofVecToAiken :: ProofVec -> Def
+proofVecToAiken ProofVec{..} =
+    let name = descToTestName pvDesc
+        steps = toProofSteps pvProof
         isInclusion =
-            pvInitialRoot v
-                == pvExpectedRoot v
-        isEmpty =
-            pvInitialRoot v == emptyRoot
-        trieExpr
-            | isEmpty = "mpf.empty"
+            pvInitialRoot == pvExpectedRoot
+        isEmpty = pvInitialRoot == emptyRoot
+        trieE
+            | isEmpty = var "mpf.empty"
             | otherwise =
-                "mpf.from_root("
-                    ++ aikenHex
-                        (pvInitialRoot v)
-                    ++ ")"
-    in  if isInclusion
-            then
-                unlines
-                    [ "test "
-                        ++ name
-                        ++ "() {"
-                    , "  let proof: Proof ="
-                    , "    "
-                        ++ renderProof steps
-                    , "  mpf.has("
-                    , "    "
-                        ++ trieExpr
-                        ++ ","
-                    , "    "
-                        ++ aikenHex (pvKey v)
-                        ++ ","
-                    , "    "
-                        ++ aikenHex (pvValue v)
-                        ++ ","
-                    , "    proof,"
-                    , "  )"
-                    , "}"
-                    ]
-            else
-                unlines
-                    [ "test "
-                        ++ name
-                        ++ "() {"
-                    , "  let proof: Proof ="
-                    , "    "
-                        ++ renderProof steps
-                    , "  let trie ="
-                    , "    mpf.insert("
-                    , "      "
-                        ++ trieExpr
-                        ++ ","
-                    , "      "
-                        ++ aikenHex (pvKey v)
-                        ++ ","
-                    , "      "
-                        ++ aikenHex (pvValue v)
-                        ++ ","
-                    , "      proof,"
-                    , "    )"
-                    , "  mpf.root(trie) == "
-                        ++ aikenHex
-                            (pvExpectedRoot v)
-                    , "}"
-                    ]
+                call
+                    "mpf.from_root"
+                    [hex pvInitialRoot]
+        body :: BodyM Expr
+        body = do
+            proof <-
+                bindAs
+                    "proof"
+                    "Proof"
+                    ( list
+                        $ mapM_ (item . stepToExpr) steps
+                    )
+            if isInclusion
+                then
+                    pure
+                        $ call
+                            "mpf.has"
+                            [ trieE
+                            , hex pvKey
+                            , hex pvValue
+                            , proof
+                            ]
+                else do
+                    trie <-
+                        bind
+                            "trie"
+                            ( call
+                                "mpf.insert"
+                                [ trieE
+                                , hex pvKey
+                                , hex pvValue
+                                , proof
+                                ]
+                            )
+                    pure
+                        $ call "mpf.root" [trie]
+                            .== hex pvExpectedRoot
+    in  Test name $ runBody body
 
--- | Render asset name vector as Aiken test.
-assetNameVecToAiken :: AssetNameVec -> String
-assetNameVecToAiken v =
-    let name = descToTestName (anvDesc v)
-    in  unlines
-            [ "test " ++ name ++ "() {"
-            , "  let ref ="
-            , "    OutputReference {"
-            , "      transaction_id: "
-                ++ aikenHex (anvTxId v)
-                ++ ","
-            , "      output_index: "
-                ++ show (anvOutputIndex v)
-                ++ ","
-            , "    }"
-            , "  assetName(ref) == "
-                ++ aikenHex (anvExpected v)
-            , "}"
+-- | Render an asset name vector as an Aiken 'Def'.
+assetNameVecToAiken :: AssetNameVec -> Def
+assetNameVecToAiken AssetNameVec{..} =
+    let name = descToTestName anvDesc
+        body :: BodyM Expr
+        body = do
+            ref <-
+                bind "ref"
+                    $ record "OutputReference"
+                    $ do
+                        field "transaction_id"
+                            $ hex anvTxId
+                        field "output_index"
+                            $ int
+                            $ fromIntegral
+                                anvOutputIndex
+            pure
+                $ call "assetName" [ref]
+                    .== hex anvExpected
+    in  Test name $ runBody body
+
+-- | Generate complete Aiken module.
+aikenModule :: ModuleM ()
+aikenModule = do
+    emit
+        $ comment
+            "Auto-generated cage test vectors"
+    emit $ comment "Do not edit"
+    emit
+        $ comment
+            "  run 'just generate-vectors'"
+    emit $ comment "  to regenerate"
+    emit Blank
+    emit
+        $ useFrom
+            "aiken/merkle_patricia_forestry"
+            [ "Branch"
+            , "Fork"
+            , "Leaf"
+            , "Neighbor"
+            , "Proof"
             ]
-
--- | Generate complete Aiken source file.
-aikenOutput :: String
-aikenOutput =
-    unlines
-        $ [ "// Auto-generated cage"
-                ++ " test vectors"
-          , "// Do not edit"
-          , "//   run 'just"
-                ++ " generate-vectors'"
-          , "//   to regenerate"
-          , ""
-          , "use aiken/"
-                ++ "merkle_patricia_forestry.{"
-          , "  Branch, Fork, Leaf,"
-          , "  Neighbor, Proof,"
-          , "}"
-          , "use aiken/"
-                ++ "merkle_patricia_forestry"
-                ++ " as mpf"
-          , "use cardano/transaction"
-                ++ ".{OutputReference}"
-          , "use lib.{assetName}"
-          , ""
-          ]
-            ++ concatMap
-                ( \v ->
-                    lines (proofVecToAiken v)
-                        ++ [""]
-                )
-                rawProofVectors
-            ++ concatMap
-                ( \v ->
-                    lines
-                        (assetNameVecToAiken v)
-                        ++ [""]
-                )
-                rawAssetNameVectors
+    emit
+        $ useAs
+            "aiken/merkle_patricia_forestry"
+            "mpf"
+    emit
+        $ useFrom
+            "cardano/transaction"
+            ["OutputReference"]
+    emit $ useFrom "lib" ["assetName"]
+    emit Blank
+    mapM_
+        (emit . proofVecToAiken)
+        rawProofVectors
+    mapM_
+        (emit . assetNameVecToAiken)
+        rawAssetNameVectors
 
 -- -----------------------------------------------------------
 -- Main
@@ -726,7 +713,9 @@ main = do
     args <- getArgs
     case args of
         ["--aiken"] ->
-            putStr aikenOutput
+            putStr
+                $ renderModule
+                $ runModule aikenModule
         [] -> do
             let vectors =
                     Aeson.object
