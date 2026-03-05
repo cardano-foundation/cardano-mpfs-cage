@@ -1,0 +1,7 @@
+dist-newstyle/
+result
+result-*
+.direnv/
+lean/.lake/
+lean/lake-packages/
+lean/build/

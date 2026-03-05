@@ -1,0 +1,87 @@
+cabal-version: 3.0
+name:          cardano-mpfs-cage
+version:       0.1.0.0
+synopsis:      Language-agnostic MPFS cage validator specification
+description:
+  PlutusData types, Lean proofs, and JSON test vectors for the
+  MPFS cage validator. Enables cross-language validation without
+  depending on cardano-ledger.
+
+license:       Apache-2.0
+license-file:  LICENSE
+author:        Paolo Veronelli
+maintainer:    paolo.veronelli@gmail.com
+category:      Blockchain
+build-type:    Simple
+
+library
+  hs-source-dirs:  lib
+  default-language: GHC2021
+  ghc-options:
+    -Wall -Werror -Wunused-imports -Wunused-packages
+    -Wmissing-export-lists -Wname-shadowing
+    -Wredundant-constraints
+
+  exposed-modules:
+    Cardano.MPFS.Cage.AssetName
+    Cardano.MPFS.Cage.Proof
+    Cardano.MPFS.Cage.Types
+
+  build-depends:
+    , base           >=4.14 && <5
+    , bytestring
+    , containers
+    , crypton
+    , memory
+    , mts:mpf
+    , plutus-core
+    , plutus-tx
+
+  default-extensions:
+    DerivingStrategies
+    OverloadedStrings
+    RecordWildCards
+
+executable cage-test-vectors
+  hs-source-dirs:   app/test-vectors
+  main-is:          Main.hs
+  default-language: GHC2021
+  ghc-options:      -Wall -Werror
+
+  build-depends:
+    , aeson
+    , aeson-pretty
+    , base                >=4.14 && <5
+    , base16-bytestring
+    , bytestring
+    , cardano-mpfs-cage
+    , lens
+    , mts:mpf
+    , plutus-core
+    , plutus-tx
+    , text
+
+  default-extensions:
+    DerivingStrategies
+    OverloadedStrings
+
+test-suite cage-tests
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          Main.hs
+  default-language: GHC2021
+  ghc-options:      -Wall -Werror
+
+  other-modules:
+    Cardano.MPFS.Cage.TypesSpec
+
+  build-depends:
+    , base                >=4.14 && <5
+    , bytestring
+    , cardano-mpfs-cage
+    , hspec
+    , plutus-core
+    , plutus-tx
+
+  default-extensions:
+    OverloadedStrings
