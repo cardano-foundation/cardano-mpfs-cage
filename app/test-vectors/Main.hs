@@ -537,7 +537,7 @@ descToTestName :: Text -> String
 descToTestName desc =
     stripTrailing
         $ "vec_"
-        ++ go False (T.unpack desc)
+            ++ go False (T.unpack desc)
   where
     stripTrailing =
         reverse
@@ -703,19 +703,19 @@ aikenOutput =
           , "use lib.{assetName}"
           , ""
           ]
-        ++ concatMap
-            ( \v ->
-                lines (proofVecToAiken v)
-                    ++ [""]
-            )
-            rawProofVectors
-        ++ concatMap
-            ( \v ->
-                lines
-                    (assetNameVecToAiken v)
-                    ++ [""]
-            )
-            rawAssetNameVectors
+            ++ concatMap
+                ( \v ->
+                    lines (proofVecToAiken v)
+                        ++ [""]
+                )
+                rawProofVectors
+            ++ concatMap
+                ( \v ->
+                    lines
+                        (assetNameVecToAiken v)
+                        ++ [""]
+                )
+                rawAssetNameVectors
 
 -- -----------------------------------------------------------
 -- Main
