@@ -28,7 +28,7 @@ jobs:
         run: nix build .#cage-test-vectors --quiet
 
       - name: Verify test vectors (valid JSON)
-        run: nix develop --quiet -c ./result/bin/cage-test-vectors | jq . > /dev/null
+        run: ./result/bin/cage-test-vectors | jq . > /dev/null
 
       - name: Check formatting
         run: |
