@@ -53,7 +53,9 @@ executable cage-test-vectors
     , base16-bytestring
     , bytestring
     , cardano-mpfs-cage
+    , crypton
     , lens
+    , memory
     , mts:mpf
     , plutus-core
     , plutus-tx
