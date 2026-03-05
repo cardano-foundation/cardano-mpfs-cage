@@ -5,3 +5,6 @@ result-*
 lean/.lake/
 lean/lake-packages/
 lean/build/
+
+# LLM investigation notes (local only)
+.llm/
