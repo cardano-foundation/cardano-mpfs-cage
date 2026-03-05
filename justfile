@@ -54,6 +54,7 @@ unit match="":
 ci:
     just build
     just unit
+    just vectors
     just format-check
     just hlint
 
