@@ -3,8 +3,7 @@
 -- Supports two output formats:
 --
 -- - JSON (default): language-neutral test vectors
--- - Aiken (@--aiken@): test functions for the Aiken
---   validator
+-- - Aiken (@--aiken@): test functions for the Aiken validator
 module Main (main) where
 
 import Aiken.Codegen
@@ -32,10 +31,7 @@ import Aiken.Codegen
     , (.==)
     )
 import Cardano.MPFS.Cage.AssetName (deriveAssetName)
-import Cardano.MPFS.Cage.Proof
-    ( serializeProof
-    , toProofSteps
-    )
+import Cardano.MPFS.Cage.Proof (serializeProof, toProofSteps)
 import Cardano.MPFS.Cage.Types
 import Control.Lens (simple)
 import Crypto.Hash (Blake2b_256, Digest, hash)
@@ -70,10 +66,7 @@ import MPF.Hashes
     , root
     )
 import MPF.Insertion (inserting)
-import MPF.Proof.Insertion
-    ( MPFProof
-    , mkMPFInclusionProof
-    )
+import MPF.Proof.Insertion (MPFProof, mkMPFInclusionProof)
 import PlutusCore.Data (Data (..))
 import PlutusTx.Builtins.Internal
     ( BuiltinByteString (..)
@@ -87,11 +80,7 @@ import System.Environment (getArgs)
 -- -----------------------------------------------------------
 
 -- | ByteString codecs for MPF standalone backend.
-bsCodecs
-    :: MPFStandaloneCodecs
-        ByteString
-        ByteString
-        MPFHash
+bsCodecs :: MPFStandaloneCodecs ByteString ByteString MPFHash
 bsCodecs =
     MPFStandaloneCodecs
         { mpfKeyCodec = simple
@@ -100,8 +89,7 @@ bsCodecs =
         }
 
 -- | Insert a key-value pair.
-insertKV
-    :: ByteString -> ByteString -> MPFPure ()
+insertKV :: ByteString -> ByteString -> MPFPure ()
 insertKV k v =
     runMPFPureTransaction bsCodecs
         $ inserting
@@ -116,13 +104,10 @@ insertKV k v =
 -- | Get the root hash.
 getRootHash :: MPFPure (Maybe ByteString)
 getRootHash =
-    runMPFPureTransaction bsCodecs
-        $ root MPFStandaloneMPFCol []
+    runMPFPureTransaction bsCodecs $ root MPFStandaloneMPFCol []
 
 -- | Get inclusion proof for a key.
-getProof
-    :: ByteString
-    -> MPFPure (Maybe (MPFProof MPFHash))
+getProof :: ByteString -> MPFPure (Maybe (MPFProof MPFHash))
 getProof k =
     runMPFPureTransaction bsCodecs
         $ mkMPFInclusionProof
@@ -133,47 +118,34 @@ getProof k =
             k
 
 -- | Build a tree from key-value pairs.
-buildTree
-    :: [(ByteString, ByteString)]
-    -> MPFInMemoryDB
+buildTree :: [(ByteString, ByteString)] -> MPFInMemoryDB
 buildTree kvs =
-    snd
-        $ runMPFPure emptyMPFInMemoryDB
-        $ mapM_ (uncurry insertKV) kvs
+    snd $ runMPFPure emptyMPFInMemoryDB $ mapM_ (uncurry insertKV) kvs
 
--- | Get proof and root from a database
--- (must exist).
+-- | Get proof and root from a database (must exist).
 getVec
     :: MPFInMemoryDB
     -> ByteString
     -> (MPFProof MPFHash, ByteString)
 getVec db k =
-    case fst
-        $ runMPFPure db
-        $ (,) <$> getProof k <*> getRootHash of
+    case fst $ runMPFPure db $ (,) <$> getProof k <*> getRootHash of
         (Just p, Just r) -> (p, r)
         _ -> error "getVec: missing proof or root"
 
 -- | Get just the root (must exist).
-getRoot
-    :: MPFInMemoryDB
-    -> ByteString
-    -> ByteString
-getRoot db k = snd (getVec db k)
+getRoot :: MPFInMemoryDB -> ByteString -> ByteString
+getRoot db k = snd $ getVec db k
 
 -- -----------------------------------------------------------
 -- Hex encoding
 -- -----------------------------------------------------------
 
 -- | Blake2b-256 hash a ByteString.
--- The Aiken MPF library hashes keys\/values with
--- blake2b_256 internally. To make Haskell-generated
--- proofs compatible, we pre-hash keys so the trie
--- paths match.
+-- The Aiken MPF library hashes keys\/values with blake2b_256
+-- internally. To make Haskell-generated proofs compatible,
+-- we pre-hash keys so the trie paths match.
 blake2b :: ByteString -> ByteString
-blake2b bs =
-    let d = hash bs :: Digest Blake2b_256
-    in  convert d
+blake2b bs = convert (hash bs :: Digest Blake2b_256)
 
 -- | Hex-encode a ByteString for JSON output.
 toHex :: ByteString -> Text
@@ -183,35 +155,29 @@ toHex = T.decodeUtf8 . B16.encode
 -- JSON helpers
 -- -----------------------------------------------------------
 
--- | Encode a PlutusData value to its Data AST
--- and render as JSON.
+-- | Encode a PlutusData value to its Data AST and render as JSON.
 dataToJson :: Data -> Aeson.Value
 dataToJson (Constr tag fields) =
     Aeson.object
-        [ "constructor" .= tag
-        , "fields" .= map dataToJson fields
-        ]
+        ["constructor" .= tag, "fields" .= map dataToJson fields]
 dataToJson (I n) = Aeson.toJSON n
-dataToJson (B bs) =
-    Aeson.object ["bytes" .= toHex bs]
-dataToJson (List xs) =
-    Aeson.toJSON (map dataToJson xs)
+dataToJson (B bs) = Aeson.object ["bytes" .= toHex bs]
+dataToJson (List xs) = Aeson.toJSON $ map dataToJson xs
 dataToJson (Map kvs) =
     Aeson.toJSON
         $ map
             ( \(k, v) ->
-                Aeson.object
-                    [ "k" .= dataToJson k
-                    , "v" .= dataToJson v
-                    ]
+                Aeson.object ["k" .= dataToJson k, "v" .= dataToJson v]
             )
             kvs
 
 -- | Encode a ToData value as JSON PlutusData.
 toDataJson :: (ToData a) => a -> Aeson.Value
-toDataJson x =
-    let BuiltinData d = toBuiltinData x
-    in  dataToJson d
+toDataJson x = let BuiltinData d = toBuiltinData x in dataToJson d
+
+-- | Text literal as JSON value (avoids @:: Text@ annotations).
+txt :: Text -> Aeson.Value
+txt = Aeson.toJSON
 
 -- -----------------------------------------------------------
 -- Shared vector data types
@@ -219,10 +185,9 @@ toDataJson x =
 
 -- | Raw proof test vector data.
 --
--- Keys are stored in original (unhashed) form.
--- The Haskell MPF uses @blake2b(key)@ as the trie
--- path, matching the Aiken MPF which hashes keys
--- internally.
+-- Keys are stored in original (unhashed) form. The Haskell MPF
+-- uses @blake2b(key)@ as the trie path, matching the Aiken MPF
+-- which hashes keys internally.
 data ProofVec = ProofVec
     { pvDesc :: Text
     , pvKey :: ByteString
@@ -250,124 +215,69 @@ data AssetNameVec = AssetNameVec
 emptyRoot :: ByteString
 emptyRoot = BS.replicate 32 0
 
--- | Build a tree from key-value pairs, pre-hashing
--- keys with blake2b_256 to match the Aiken MPF's
--- internal key hashing.
-buildTreeB2
-    :: [(ByteString, ByteString)]
-    -> MPFInMemoryDB
-buildTreeB2 kvs =
-    buildTree
-        [ (blake2b k, v)
-        | (k, v) <- kvs
-        ]
+-- | Build a tree from key-value pairs, pre-hashing keys with
+-- blake2b_256 to match the Aiken MPF's internal key hashing.
+buildTreeB2 :: [(ByteString, ByteString)] -> MPFInMemoryDB
+buildTreeB2 kvs = buildTree [(blake2b k, v) | (k, v) <- kvs]
 
 -- | Get proof and root using a blake2b-hashed key.
 getVecB2
     :: MPFInMemoryDB
     -> ByteString
     -> (MPFProof MPFHash, ByteString)
-getVecB2 db k = getVec db (blake2b k)
+getVecB2 db k = getVec db $ blake2b k
 
 -- | Get just the root using a blake2b-hashed key.
-getRootB2
-    :: MPFInMemoryDB
-    -> ByteString
-    -> ByteString
-getRootB2 db k = getRoot db (blake2b k)
+getRootB2 :: MPFInMemoryDB -> ByteString -> ByteString
+getRootB2 db k = getRoot db $ blake2b k
 
 rawProofVectors :: [ProofVec]
 rawProofVectors =
     [ -- 1. Insert into empty trie
       let db = buildTreeB2 [("ab", "cd")]
           (p, r) = getVecB2 db "ab"
-      in  ProofVec
-            "insert into empty trie"
-            "ab"
-            "cd"
-            emptyRoot
-            r
-            p
+      in  ProofVec "insert into empty trie" "ab" "cd" emptyRoot r p
     , -- 2. Insert creating fork
       let db1 = buildTreeB2 [("k1", "v1")]
           r1 = getRootB2 db1 "k1"
-          db2 =
-            buildTreeB2
-                [("k1", "v1"), ("k2", "v2")]
+          db2 = buildTreeB2 [("k1", "v1"), ("k2", "v2")]
           (p2, r2) = getVecB2 db2 "k2"
-      in  ProofVec
-            "insert creating fork"
-            "k2"
-            "v2"
-            r1
-            r2
-            p2
+      in  ProofVec "insert creating fork" "k2" "v2" r1 r2 p2
     , -- 3. Insert with shared prefix
       let db1 = buildTreeB2 [("ka", "va")]
           r1 = getRootB2 db1 "ka"
-          db2 =
-            buildTreeB2
-                [("ka", "va"), ("kb", "vb")]
+          db2 = buildTreeB2 [("ka", "va"), ("kb", "vb")]
           (p2, r2) = getVecB2 db2 "kb"
-      in  ProofVec
-            "insert with shared prefix"
-            "kb"
-            "vb"
-            r1
-            r2
-            p2
+      in  ProofVec "insert with shared prefix" "kb" "vb" r1 r2 p2
     , -- 4. Inclusion proof for existing key
-      let db =
-            buildTreeB2
-                [ ("x", "1")
-                , ("y", "2")
-                , ("z", "3")
-                ]
+      let db = buildTreeB2 [("x", "1"), ("y", "2"), ("z", "3")]
           (p, r) = getVecB2 db "y"
-      in  ProofVec
-            "inclusion proof for middle key"
-            "y"
-            "2"
-            r
-            r
-            p
+      in  ProofVec "inclusion proof for middle key" "y" "2" r r p
     ]
 
 rawAssetNameVectors :: [AssetNameVec]
 rawAssetNameVectors =
     [ let txId = BS.pack [0x01 .. 0x20]
-          ref =
-            OnChainTxOutRef
-                (BuiltinByteString txId)
-                0
+          ref = OnChainTxOutRef (BuiltinByteString txId) 0
       in  AssetNameVec
-            "asset name from TxOutRef\
-            \ index 0"
+            "asset name from TxOutRef index 0"
             txId
             0
-            (deriveAssetName ref)
+            $ deriveAssetName ref
     , let txId = BS.pack [0x01 .. 0x20]
-          ref =
-            OnChainTxOutRef
-                (BuiltinByteString txId)
-                1
+          ref = OnChainTxOutRef (BuiltinByteString txId) 1
       in  AssetNameVec
-            "asset name from TxOutRef\
-            \ index 1"
+            "asset name from TxOutRef index 1"
             txId
             1
-            (deriveAssetName ref)
+            $ deriveAssetName ref
     , let txId = BS.replicate 32 0
-          ref =
-            OnChainTxOutRef
-                (BuiltinByteString txId)
-                255
+          ref = OnChainTxOutRef (BuiltinByteString txId) 255
       in  AssetNameVec
-            "asset name from zero txId\
-            \ index 255"
+            "asset name from zero txId index 255"
             txId
             255
-            (deriveAssetName ref)
+            $ deriveAssetName ref
     ]
 
 -- -----------------------------------------------------------
@@ -379,38 +289,25 @@ proofVecToJson :: ProofVec -> Aeson.Value
 proofVecToJson v =
     Aeson.object
         [ "description" .= pvDesc v
-        , "initialRoot"
-            .= toHex (pvInitialRoot v)
+        , "initialRoot" .= toHex (pvInitialRoot v)
         , "key" .= toHex (pvKey v)
         , "value" .= toHex (pvValue v)
-        , "expectedRoot"
-            .= toHex (pvExpectedRoot v)
+        , "expectedRoot" .= toHex (pvExpectedRoot v)
         , "proof"
             .= Aeson.object
-                [ "steps"
-                    .= map
-                        toDataJson
-                        ( toProofSteps
-                            (pvProof v)
-                        )
-                , "cbor"
-                    .= toHex
-                        ( serializeProof
-                            (pvProof v)
-                        )
+                [ "steps" .= map toDataJson (toProofSteps $ pvProof v)
+                , "cbor" .= toHex (serializeProof $ pvProof v)
                 ]
         ]
 
 -- | Render an asset name vector as JSON.
-assetNameVecToJson
-    :: AssetNameVec -> Aeson.Value
+assetNameVecToJson :: AssetNameVec -> Aeson.Value
 assetNameVecToJson v =
     Aeson.object
         [ "description" .= anvDesc v
         , "txId" .= toHex (anvTxId v)
         , "outputIndex" .= anvOutputIndex v
-        , "expectedAssetName"
-            .= toHex (anvExpected v)
+        , "expectedAssetName" .= toHex (anvExpected v)
         ]
 
 -- | Datum encoding vectors (JSON only).
@@ -418,24 +315,16 @@ datumEncodingVectors :: [Aeson.Value]
 datumEncodingVectors =
     [ let state =
             OnChainTokenState
-                { stateOwner =
-                    BuiltinByteString
-                        (BS.replicate 28 0xaa)
-                , stateRoot =
-                    OnChainRoot
-                        (BS.replicate 32 0xbb)
+                { stateOwner = BuiltinByteString $ BS.replicate 28 0xaa
+                , stateRoot = OnChainRoot $ BS.replicate 32 0xbb
                 , stateMaxFee = 2000000
                 , stateProcessTime = 300000
                 , stateRetractTime = 600000
                 }
       in  Aeson.object
-            [ "description"
-                .= ( "StateDatum encoding"
-                        :: Text
-                   )
-            , "type" .= ("CageDatum" :: Text)
-            , "plutusData"
-                .= toDataJson (StateDatum state)
+            [ "description" .= txt "StateDatum encoding"
+            , "type" .= txt "CageDatum"
+            , "plutusData" .= toDataJson (StateDatum state)
             ]
     , let req =
             OnChainRequest
@@ -444,96 +333,50 @@ datumEncodingVectors =
                         $ BuiltinByteString
                         $ BS.replicate 32 0xcc
                 , requestOwner =
-                    BuiltinByteString
-                        (BS.replicate 28 0xdd)
-                , requestKey =
-                    BS.pack [0x01, 0x02, 0x03]
-                , requestValue =
-                    OpInsert
-                        (BS.pack [0x04, 0x05])
+                    BuiltinByteString $ BS.replicate 28 0xdd
+                , requestKey = BS.pack [0x01, 0x02, 0x03]
+                , requestValue = OpInsert $ BS.pack [0x04, 0x05]
                 , requestFee = 1000000
-                , requestSubmittedAt =
-                    1700000000000
+                , requestSubmittedAt = 1700000000000
                 }
       in  Aeson.object
-            [ "description"
-                .= ( "RequestDatum with\
-                     \ OpInsert"
-                        :: Text
-                   )
-            , "type" .= ("CageDatum" :: Text)
-            , "plutusData"
-                .= toDataJson
-                    (RequestDatum req)
+            [ "description" .= txt "RequestDatum with OpInsert"
+            , "type" .= txt "CageDatum"
+            , "plutusData" .= toDataJson (RequestDatum req)
             ]
     , let ref =
             OnChainTxOutRef
-                ( BuiltinByteString
-                    $ BS.replicate 32 0xee
-                )
+                (BuiltinByteString $ BS.replicate 32 0xee)
                 0
       in  Aeson.object
-            [ "description"
-                .= ( "MintRedeemer Minting"
-                        :: Text
-                   )
-            , "type"
-                .= ("MintRedeemer" :: Text)
-            , "plutusData"
-                .= toDataJson
-                    (Minting (Mint ref))
+            [ "description" .= txt "MintRedeemer Minting"
+            , "type" .= txt "MintRedeemer"
+            , "plutusData" .= toDataJson (Minting (Mint ref))
             ]
     , Aeson.object
-        [ "description"
-            .= ( "MintRedeemer Burning"
-                    :: Text
-               )
-        , "type"
-            .= ("MintRedeemer" :: Text)
+        [ "description" .= txt "MintRedeemer Burning"
+        , "type" .= txt "MintRedeemer"
         , "plutusData" .= toDataJson Burning
         ]
     , Aeson.object
-        [ "description"
-            .= ( "UpdateRedeemer End"
-                    :: Text
-               )
-        , "type"
-            .= ("UpdateRedeemer" :: Text)
+        [ "description" .= txt "UpdateRedeemer End"
+        , "type" .= txt "UpdateRedeemer"
         , "plutusData" .= toDataJson End
         ]
     , Aeson.object
-        [ "description"
-            .= ( "UpdateRedeemer Reject"
-                    :: Text
-               )
-        , "type"
-            .= ("UpdateRedeemer" :: Text)
+        [ "description" .= txt "UpdateRedeemer Reject"
+        , "type" .= txt "UpdateRedeemer"
         , "plutusData" .= toDataJson Reject
         ]
     , Aeson.object
-        [ "description"
-            .= ("OpUpdate encoding" :: Text)
-        , "type"
-            .= ( "OnChainOperation"
-                    :: Text
-               )
-        , "plutusData"
-            .= toDataJson
-                ( OpUpdate
-                    "\x01\x02"
-                    "\x03\x04"
-                )
+        [ "description" .= txt "OpUpdate encoding"
+        , "type" .= txt "OnChainOperation"
+        , "plutusData" .= toDataJson (OpUpdate "\x01\x02" "\x03\x04")
         ]
     , Aeson.object
-        [ "description"
-            .= ("OpDelete encoding" :: Text)
-        , "type"
-            .= ( "OnChainOperation"
-                    :: Text
-               )
-        , "plutusData"
-            .= toDataJson
-                (OpDelete "\xaa\xbb")
+        [ "description" .= txt "OpDelete encoding"
+        , "type" .= txt "OnChainOperation"
+        , "plutusData" .= toDataJson (OpDelete "\xaa\xbb")
         ]
     ]
 
@@ -541,9 +384,7 @@ datumEncodingVectors =
 allJsonVectors :: [Aeson.Value]
 allJsonVectors =
     map proofVecToJson rawProofVectors
-        ++ map
-            assetNameVecToJson
-            rawAssetNameVectors
+        ++ map assetNameVecToJson rawAssetNameVectors
         ++ datumEncodingVectors
 
 -- -----------------------------------------------------------
@@ -553,18 +394,12 @@ allJsonVectors =
 -- | Sanitize description to Aiken test name.
 descToTestName :: Text -> String
 descToTestName desc =
-    stripTrailing
-        $ "vec_"
-            ++ go False (T.unpack desc)
+    stripTrailing $ "vec_" ++ go False (T.unpack desc)
   where
-    stripTrailing =
-        reverse
-            . dropWhile (== '_')
-            . reverse
+    stripTrailing = reverse . dropWhile (== '_') . reverse
     go _ [] = []
     go prev (c : cs)
-        | isAlphaNum c =
-            toLower c : go False cs
+        | isAlphaNum c = toLower c : go False cs
         | prev = go True cs
         | otherwise = '_' : go True cs
 
@@ -577,18 +412,10 @@ stepToExpr (Branch skip neighbors) =
 stepToExpr (Fork skip neighbor) =
     record "Fork" $ do
         field "skip" $ int skip
-        field "neighbor"
-            $ record "Neighbor"
-            $ do
-                field "nibble"
-                    $ int
-                    $ neighborNibble neighbor
-                field "prefix"
-                    $ hex
-                    $ neighborPrefix neighbor
-                field "root"
-                    $ hex
-                    $ neighborRoot neighbor
+        field "neighbor" $ record "Neighbor" $ do
+            field "nibble" $ int $ neighborNibble neighbor
+            field "prefix" $ hex $ neighborPrefix neighbor
+            field "root" $ hex $ neighborRoot neighbor
 stepToExpr (Leaf skip key value) =
     record "Leaf" $ do
         field "skip" $ int skip
@@ -600,46 +427,29 @@ proofVecToAiken :: ProofVec -> Def
 proofVecToAiken ProofVec{..} =
     let name = descToTestName pvDesc
         steps = toProofSteps pvProof
-        isInclusion =
-            pvInitialRoot == pvExpectedRoot
+        isInclusion = pvInitialRoot == pvExpectedRoot
         isEmpty = pvInitialRoot == emptyRoot
         trieE
             | isEmpty = var "mpf.empty"
-            | otherwise =
-                call
-                    "mpf.from_root"
-                    [hex pvInitialRoot]
+            | otherwise = call "mpf.from_root" [hex pvInitialRoot]
         body :: BodyM Expr
         body = do
             proof <-
-                bindAs
-                    "proof"
-                    "Proof"
-                    ( list
-                        $ mapM_ (item . stepToExpr) steps
-                    )
+                bindAs "proof" "Proof"
+                    $ list
+                    $ mapM_ (item . stepToExpr) steps
             if isInclusion
                 then
                     pure
                         $ call
                             "mpf.has"
-                            [ trieE
-                            , hex pvKey
-                            , hex pvValue
-                            , proof
-                            ]
+                            [trieE, hex pvKey, hex pvValue, proof]
                 else do
                     trie <-
-                        bind
-                            "trie"
-                            ( call
+                        bind "trie"
+                            $ call
                                 "mpf.insert"
-                                [ trieE
-                                , hex pvKey
-                                , hex pvValue
-                                , proof
-                                ]
-                            )
+                                [trieE, hex pvKey, hex pvValue, proof]
                     pure
                         $ call "mpf.root" [trie]
                             .== hex pvExpectedRoot
@@ -651,58 +461,30 @@ assetNameVecToAiken AssetNameVec{..} =
     let name = descToTestName anvDesc
         body :: BodyM Expr
         body = do
-            ref <-
-                bind "ref"
-                    $ record "OutputReference"
-                    $ do
-                        field "transaction_id"
-                            $ hex anvTxId
-                        field "output_index"
-                            $ int
-                            $ fromIntegral
-                                anvOutputIndex
-            pure
-                $ call "assetName" [ref]
-                    .== hex anvExpected
+            ref <- bind "ref" $ record "OutputReference" $ do
+                field "transaction_id" $ hex anvTxId
+                field "output_index" $ int $ fromIntegral anvOutputIndex
+            pure $ call "assetName" [ref] .== hex anvExpected
     in  Test name $ runBody body
 
 -- | Generate complete Aiken module.
 aikenModule :: ModuleM ()
 aikenModule = do
-    emit
-        $ comment
-            "Auto-generated cage test vectors"
+    emit $ comment "Auto-generated cage test vectors"
     emit $ comment "Do not edit"
-    emit
-        $ comment
-            "  run 'just generate-vectors'"
+    emit $ comment "  run 'just generate-vectors'"
     emit $ comment "  to regenerate"
     emit Blank
     emit
         $ useFrom
             "aiken/merkle_patricia_forestry"
-            [ "Branch"
-            , "Fork"
-            , "Leaf"
-            , "Neighbor"
-            , "Proof"
-            ]
-    emit
-        $ useAs
-            "aiken/merkle_patricia_forestry"
-            "mpf"
-    emit
-        $ useFrom
-            "cardano/transaction"
-            ["OutputReference"]
+            ["Branch", "Fork", "Leaf", "Neighbor", "Proof"]
+    emit $ useAs "aiken/merkle_patricia_forestry" "mpf"
+    emit $ useFrom "cardano/transaction" ["OutputReference"]
     emit $ useFrom "lib" ["assetName"]
     emit Blank
-    mapM_
-        (emit . proofVecToAiken)
-        rawProofVectors
-    mapM_
-        (emit . assetNameVecToAiken)
-        rawAssetNameVectors
+    mapM_ (emit . proofVecToAiken) rawProofVectors
+    mapM_ (emit . assetNameVecToAiken) rawAssetNameVectors
 
 -- -----------------------------------------------------------
 -- Main
@@ -713,26 +495,12 @@ main = do
     args <- getArgs
     case args of
         ["--aiken"] ->
-            putStr
-                $ renderModule
-                $ runModule aikenModule
+            putStr $ renderModule $ runModule aikenModule
         [] -> do
-            let vectors =
-                    Aeson.object
-                        [ "vectors"
-                            .= allJsonVectors
-                        ]
-            BL8.putStrLn
-                (encodePretty vectors)
+            let vectors = Aeson.object ["vectors" .= allJsonVectors]
+            BL8.putStrLn $ encodePretty vectors
         _ -> do
-            putStrLn
-                "Usage: cage-test-vectors\
-                \ [--aiken]"
+            putStrLn "Usage: cage-test-vectors [--aiken]"
             putStrLn ""
-            putStrLn
-                "  (no args)\
-                \  JSON test vectors"
-            putStrLn
-                "  --aiken  \
-                \  Aiken source with\
-                \ test functions"
+            putStrLn "  (no args)  JSON test vectors"
+            putStrLn "  --aiken    Aiken source with test functions"
