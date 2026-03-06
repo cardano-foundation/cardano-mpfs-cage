@@ -81,5 +81,6 @@ test-suite cage-tests
     , hspec
     , plutus-core
     , plutus-tx
+    , QuickCheck
 
   default-extensions: OverloadedStrings

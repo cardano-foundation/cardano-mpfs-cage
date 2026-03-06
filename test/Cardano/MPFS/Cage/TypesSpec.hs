@@ -13,352 +13,325 @@ import PlutusTx.IsData.Class
     , ToData (..)
     )
 import Test.Hspec
+import Test.QuickCheck
 
--- | Helper: roundtrip via ToData/FromData.
-roundtrip
+-- ---------------------------------------------------------
+-- Generators
+-- ---------------------------------------------------------
+
+genBBS :: Gen BuiltinByteString
+genBBS = BuiltinByteString . BS.pack <$> listOf arbitrary
+
+genBBS28 :: Gen BuiltinByteString
+genBBS28 =
+    BuiltinByteString . BS.pack
+        <$> vectorOf 28 arbitrary
+
+genBBS32 :: Gen BuiltinByteString
+genBBS32 =
+    BuiltinByteString . BS.pack
+        <$> vectorOf 32 arbitrary
+
+genBS :: Gen BS.ByteString
+genBS = BS.pack <$> listOf arbitrary
+
+genBS32 :: Gen BS.ByteString
+genBS32 = BS.pack <$> vectorOf 32 arbitrary
+
+genNonNeg :: Gen Integer
+genNonNeg = getNonNegative <$> arbitrary
+
+genTokenId :: Gen OnChainTokenId
+genTokenId = OnChainTokenId <$> genBBS32
+
+genTxOutRef :: Gen OnChainTxOutRef
+genTxOutRef =
+    OnChainTxOutRef
+        <$> genBBS32
+        <*> genNonNeg
+
+genRoot :: Gen OnChainRoot
+genRoot = OnChainRoot <$> genBS32
+
+genOperation :: Gen OnChainOperation
+genOperation =
+    oneof
+        [ OpInsert <$> genBS
+        , OpDelete <$> genBS
+        , OpUpdate <$> genBS <*> genBS
+        ]
+
+genNeighbor :: Gen Neighbor
+genNeighbor =
+    Neighbor
+        <$> chooseInteger (0, 15)
+        <*> genBS
+        <*> genBS32
+
+genProofStep :: Gen ProofStep
+genProofStep =
+    oneof
+        [ Branch
+            <$> genNonNeg
+            <*> genBS
+        , Fork
+            <$> genNonNeg
+            <*> genNeighbor
+        , Leaf
+            <$> genNonNeg
+            <*> genBS
+            <*> genBS
+        ]
+
+genRequest :: Gen OnChainRequest
+genRequest =
+    OnChainRequest
+        <$> genTokenId
+        <*> genBBS28
+        <*> genBS
+        <*> genOperation
+        <*> genNonNeg
+        <*> genNonNeg
+
+genTokenState :: Gen OnChainTokenState
+genTokenState =
+    OnChainTokenState
+        <$> genBBS28
+        <*> genRoot
+        <*> genNonNeg
+        <*> genNonNeg
+        <*> genNonNeg
+
+genCageDatum :: Gen CageDatum
+genCageDatum =
+    oneof
+        [ RequestDatum <$> genRequest
+        , StateDatum <$> genTokenState
+        ]
+
+genMint :: Gen Mint
+genMint = Mint <$> genTxOutRef
+
+genMigration :: Gen Migration
+genMigration = Migration <$> genBBS <*> genTokenId
+
+genMintRedeemer :: Gen MintRedeemer
+genMintRedeemer =
+    oneof
+        [ Minting <$> genMint
+        , Migrating <$> genMigration
+        , pure Burning
+        ]
+
+genUpdateRedeemer :: Gen UpdateRedeemer
+genUpdateRedeemer =
+    oneof
+        [ pure End
+        , Contribute <$> genTxOutRef
+        , Modify <$> listOf (listOf genProofStep)
+        , Retract <$> genTxOutRef
+        , pure Reject
+        ]
+
+-- ---------------------------------------------------------
+-- Helpers
+-- ---------------------------------------------------------
+
+-- | Roundtrip property via ToData/FromData.
+roundtrips
     :: (ToData a, FromData a, Show a, Eq a)
     => a
-    -> Expectation
-roundtrip x =
-    fromBuiltinData (toBuiltinData x)
-        `shouldBe` Just x
+    -> Property
+roundtrips x =
+    fromBuiltinData (toBuiltinData x) === Just x
 
--- | Helper: verify constructor index.
+-- | Extract constructor index from Data encoding.
 constrIndex :: (ToData a) => a -> Integer
 constrIndex x =
     let BuiltinData d = toBuiltinData x
     in  case d of
             Constr n _ -> n
-            _ ->
-                error
-                    "expected Constr"
+            _ -> error "expected Constr"
+
+-- ---------------------------------------------------------
+-- Spec
+-- ---------------------------------------------------------
 
 spec :: Spec
 spec = do
     describe "OnChainTokenId" $ do
-        it "roundtrips via ToData/FromData" $ do
-            let tid =
-                    OnChainTokenId
-                        $ BuiltinByteString
-                        $ BS.replicate 32 0xab
-            roundtrip tid
-
-        it "uses constructor index 0" $ do
-            let tid =
-                    OnChainTokenId
-                        $ BuiltinByteString
-                            "test"
-            constrIndex tid `shouldBe` 0
+        it "roundtrips via ToData/FromData"
+            $ property
+            $ forAll genTokenId roundtrips
+        it "uses constructor index 0"
+            $ property
+            $ forAll genTokenId
+            $ \x -> constrIndex x === 0
 
     describe "OnChainTxOutRef" $ do
-        it "roundtrips via ToData/FromData" $ do
-            let ref =
-                    OnChainTxOutRef
-                        (BuiltinByteString $ BS.replicate 32 0x01)
-                        42
-            roundtrip ref
-
-        it "uses constructor index 0" $ do
-            let ref =
-                    OnChainTxOutRef
-                        (BuiltinByteString "tx")
-                        0
-            constrIndex ref `shouldBe` 0
-
-    describe "OnChainOperation" $ do
-        it "roundtrips OpInsert" $ do
-            roundtrip (OpInsert "value")
-
-        it "roundtrips OpDelete" $ do
-            roundtrip (OpDelete "old")
-
-        it "roundtrips OpUpdate" $ do
-            roundtrip (OpUpdate "old" "new")
-
-        it "OpInsert uses constructor 0"
-            $ constrIndex (OpInsert "v")
-            `shouldBe` 0
-
-        it "OpDelete uses constructor 1"
-            $ constrIndex (OpDelete "v")
-            `shouldBe` 1
-
-        it "OpUpdate uses constructor 2"
-            $ constrIndex (OpUpdate "o" "n")
-            `shouldBe` 2
+        it "roundtrips via ToData/FromData"
+            $ property
+            $ forAll genTxOutRef roundtrips
+        it "uses constructor index 0"
+            $ property
+            $ forAll genTxOutRef
+            $ \x -> constrIndex x === 0
 
     describe "OnChainRoot" $ do
-        it "roundtrips via ToData/FromData" $ do
-            let r =
-                    OnChainRoot (BS.replicate 32 0xff)
-            roundtrip r
+        it "roundtrips via ToData/FromData"
+            $ property
+            $ forAll genRoot roundtrips
+
+    describe "OnChainOperation" $ do
+        it "roundtrips via ToData/FromData"
+            $ property
+            $ forAll genOperation roundtrips
+        it "OpInsert uses constructor 0"
+            $ property
+            $ forAll (OpInsert <$> genBS)
+            $ \x -> constrIndex x === 0
+        it "OpDelete uses constructor 1"
+            $ property
+            $ forAll (OpDelete <$> genBS)
+            $ \x -> constrIndex x === 1
+        it "OpUpdate uses constructor 2"
+            $ property
+            $ forAll (OpUpdate <$> genBS <*> genBS)
+            $ \x -> constrIndex x === 2
+
+    describe "Neighbor" $ do
+        it "roundtrips via ToData/FromData"
+            $ property
+            $ forAll genNeighbor roundtrips
+
+    describe "ProofStep" $ do
+        it "roundtrips via ToData/FromData"
+            $ property
+            $ forAll genProofStep roundtrips
+        it "Branch uses constructor 0"
+            $ property
+            $ forAll
+                ( Branch
+                    <$> genNonNeg
+                    <*> genBS
+                )
+            $ \x -> constrIndex x === 0
+        it "Fork uses constructor 1"
+            $ property
+            $ forAll
+                ( Fork
+                    <$> genNonNeg
+                    <*> genNeighbor
+                )
+            $ \x -> constrIndex x === 1
+        it "Leaf uses constructor 2"
+            $ property
+            $ forAll
+                ( Leaf
+                    <$> genNonNeg
+                    <*> genBS
+                    <*> genBS
+                )
+            $ \x -> constrIndex x === 2
 
     describe "OnChainRequest" $ do
-        it "roundtrips via ToData/FromData" $ do
-            let req =
-                    OnChainRequest
-                        { requestToken =
-                            OnChainTokenId
-                                (BuiltinByteString $ BS.replicate 32 0xcc)
-                        , requestOwner =
-                            BuiltinByteString
-                                $ BS.replicate 28 0xdd
-                        , requestKey = "key"
-                        , requestValue =
-                            OpInsert "val"
-                        , requestFee = 2000000
-                        , requestSubmittedAt =
-                            1700000000000
-                        }
-            roundtrip req
+        it "roundtrips via ToData/FromData"
+            $ property
+            $ forAll genRequest roundtrips
 
     describe "OnChainTokenState" $ do
-        it "roundtrips via ToData/FromData" $ do
-            let state =
-                    OnChainTokenState
-                        { stateOwner =
-                            BuiltinByteString
-                                $ BS.replicate 28 0xaa
-                        , stateRoot =
-                            OnChainRoot
-                                $ BS.replicate 32 0xbb
-                        , stateMaxFee = 2000000
-                        , stateProcessTime = 300000
-                        , stateRetractTime = 600000
-                        }
-            roundtrip state
+        it "roundtrips via ToData/FromData"
+            $ property
+            $ forAll genTokenState roundtrips
 
     describe "CageDatum" $ do
-        it "roundtrips RequestDatum" $ do
-            let req =
-                    OnChainRequest
-                        { requestToken =
-                            OnChainTokenId
-                                (BuiltinByteString "tok")
-                        , requestOwner =
-                            BuiltinByteString "own"
-                        , requestKey = "k"
-                        , requestValue =
-                            OpInsert "v"
-                        , requestFee = 1000000
-                        , requestSubmittedAt = 0
-                        }
-            roundtrip (RequestDatum req)
-
-        it "roundtrips StateDatum" $ do
-            let state =
-                    OnChainTokenState
-                        { stateOwner =
-                            BuiltinByteString "own"
-                        , stateRoot =
-                            OnChainRoot "root"
-                        , stateMaxFee = 0
-                        , stateProcessTime = 1
-                        , stateRetractTime = 1
-                        }
-            roundtrip (StateDatum state)
-
+        it "roundtrips via ToData/FromData"
+            $ property
+            $ forAll genCageDatum roundtrips
         it "RequestDatum uses constructor 0"
-            $ let req =
-                    OnChainRequest
-                        { requestToken =
-                            OnChainTokenId
-                                (BuiltinByteString "t")
-                        , requestOwner =
-                            BuiltinByteString "o"
-                        , requestKey = "k"
-                        , requestValue =
-                            OpInsert "v"
-                        , requestFee = 0
-                        , requestSubmittedAt = 0
-                        }
-              in  constrIndex (RequestDatum req)
-                    `shouldBe` 0
-
+            $ property
+            $ forAll (RequestDatum <$> genRequest)
+            $ \x -> constrIndex x === 0
         it "StateDatum uses constructor 1"
-            $ let state =
-                    OnChainTokenState
-                        { stateOwner =
-                            BuiltinByteString "o"
-                        , stateRoot =
-                            OnChainRoot "r"
-                        , stateMaxFee = 0
-                        , stateProcessTime = 1
-                        , stateRetractTime = 1
-                        }
-              in  constrIndex (StateDatum state)
-                    `shouldBe` 1
+            $ property
+            $ forAll (StateDatum <$> genTokenState)
+            $ \x -> constrIndex x === 1
 
     describe "MintRedeemer" $ do
-        it "roundtrips Minting" $ do
-            let m =
-                    Minting
-                        $ Mint
-                        $ OnChainTxOutRef
-                            (BuiltinByteString "tx")
-                            0
-            roundtrip m
-
-        it "roundtrips Migrating" $ do
-            let m =
-                    Migrating
-                        $ Migration
-                            (BuiltinByteString "pol")
-                            (OnChainTokenId $ BuiltinByteString "tid")
-            roundtrip m
-
-        it "roundtrips Burning"
-            $ roundtrip Burning
-
+        it "roundtrips via ToData/FromData"
+            $ property
+            $ forAll genMintRedeemer roundtrips
         it "Minting uses constructor 0"
-            $ let m =
-                    Minting
-                        $ Mint
-                        $ OnChainTxOutRef
-                            (BuiltinByteString "tx")
-                            0
-              in  constrIndex m `shouldBe` 0
-
+            $ property
+            $ forAll (Minting <$> genMint)
+            $ \x -> constrIndex x === 0
         it "Migrating uses constructor 1"
-            $ let m =
-                    Migrating
-                        $ Migration
-                            (BuiltinByteString "p")
-                            (OnChainTokenId $ BuiltinByteString "t")
-              in  constrIndex m `shouldBe` 1
-
+            $ property
+            $ forAll (Migrating <$> genMigration)
+            $ \x -> constrIndex x === 1
         it "Burning uses constructor 2"
             $ constrIndex Burning
             `shouldBe` 2
 
     describe "UpdateRedeemer" $ do
-        it "roundtrips End" $ roundtrip End
-
-        it "roundtrips Contribute" $ do
-            let r =
-                    Contribute
-                        $ OnChainTxOutRef
-                            (BuiltinByteString "tx")
-                            5
-            roundtrip r
-
-        it "roundtrips Retract" $ do
-            let r =
-                    Retract
-                        $ OnChainTxOutRef
-                            (BuiltinByteString "tx")
-                            3
-            roundtrip r
-
-        it "roundtrips Reject" $ roundtrip Reject
-
-        it "roundtrips Modify with empty proofs"
-            $ roundtrip (Modify [])
-
+        it "roundtrips via ToData/FromData"
+            $ property
+            $ forAll genUpdateRedeemer roundtrips
         it "End uses constructor 0"
             $ constrIndex End
             `shouldBe` 0
-
         it "Contribute uses constructor 1"
-            $ let r =
-                    Contribute
-                        $ OnChainTxOutRef
-                            (BuiltinByteString "tx")
-                            0
-              in  constrIndex r `shouldBe` 1
-
+            $ property
+            $ forAll (Contribute <$> genTxOutRef)
+            $ \x -> constrIndex x === 1
         it "Modify uses constructor 2"
-            $ constrIndex (Modify [])
-            `shouldBe` 2
-
+            $ property
+            $ forAll
+                (Modify <$> listOf (listOf genProofStep))
+            $ \x -> constrIndex x === 2
         it "Retract uses constructor 3"
-            $ let r =
-                    Retract
-                        $ OnChainTxOutRef
-                            (BuiltinByteString "tx")
-                            0
-              in  constrIndex r `shouldBe` 3
-
+            $ property
+            $ forAll (Retract <$> genTxOutRef)
+            $ \x -> constrIndex x === 3
         it "Reject uses constructor 4"
             $ constrIndex Reject
             `shouldBe` 4
 
-    describe "ProofStep" $ do
-        it "roundtrips Branch" $ do
-            let step =
-                    Branch
-                        0
-                        (BS.replicate 128 0x00)
-            roundtrip step
-
-        it "roundtrips Fork" $ do
-            let step =
-                    Fork
-                        1
-                        Neighbor
-                            { neighborNibble = 5
-                            , neighborPrefix = "pfx"
-                            , neighborRoot =
-                                BS.replicate 32 0xaa
-                            }
-            roundtrip step
-
-        it "roundtrips Leaf" $ do
-            let step = Leaf 2 "key" "val"
-            roundtrip step
-
-        it "Branch uses constructor 0"
-            $ constrIndex (Branch 0 "nb")
-            `shouldBe` 0
-
-        it "Fork uses constructor 1"
-            $ constrIndex
-                (Fork 0 $ Neighbor 0 "" "")
-            `shouldBe` 1
-
-        it "Leaf uses constructor 2"
-            $ constrIndex (Leaf 0 "" "")
-            `shouldBe` 2
-
-    describe "Neighbor" $ do
-        it "roundtrips via ToData/FromData" $ do
-            let n =
-                    Neighbor
-                        { neighborNibble = 7
-                        , neighborPrefix = "prefix"
-                        , neighborRoot =
-                            BS.replicate 32 0xbb
-                        }
-            roundtrip n
-
     describe "deriveAssetName" $ do
-        it "produces 32-byte output" $ do
-            let ref =
-                    OnChainTxOutRef
-                        (BuiltinByteString $ BS.replicate 32 0x01)
-                        0
-            BS.length (deriveAssetName ref)
-                `shouldBe` 32
-
+        it "produces 32-byte output"
+            $ property
+            $ forAll genTxOutRef
+            $ \ref ->
+                BS.length (deriveAssetName ref) === 32
+        it "is deterministic"
+            $ property
+            $ forAll genTxOutRef
+            $ \ref ->
+                deriveAssetName ref === deriveAssetName ref
         it "different index gives different name"
-            $ do
-                let txId =
-                        BuiltinByteString
-                            $ BS.replicate 32 0x01
-                    ref0 = OnChainTxOutRef txId 0
-                    ref1 = OnChainTxOutRef txId 1
-                deriveAssetName ref0
-                    `shouldNotBe` deriveAssetName ref1
-
+            $ property
+            $ forAll genBBS32
+            $ \txId ->
+                forAll (arbitrary `suchThat` (/= 0))
+                    $ \(n :: Integer) ->
+                        let ref0 =
+                                OnChainTxOutRef txId 0
+                            ref1 =
+                                OnChainTxOutRef
+                                    txId
+                                    (abs n)
+                        in  deriveAssetName ref0
+                                =/= deriveAssetName ref1
         it "different txId gives different name"
-            $ do
-                let ref0 =
-                        OnChainTxOutRef
-                            (BuiltinByteString $ BS.replicate 32 0x01)
-                            0
-                    ref1 =
-                        OnChainTxOutRef
-                            (BuiltinByteString $ BS.replicate 32 0x02)
-                            0
-                deriveAssetName ref0
-                    `shouldNotBe` deriveAssetName ref1
+            $ property
+            $ forAll genBBS32
+            $ \txId1 ->
+                forAll
+                    (genBBS32 `suchThat` (/= txId1))
+                    $ \txId2 ->
+                        let ref1 =
+                                OnChainTxOutRef txId1 0
+                            ref2 =
+                                OnChainTxOutRef txId2 0
+                        in  deriveAssetName ref1
+                                =/= deriveAssetName ref2
