@@ -123,14 +123,20 @@ genMintRedeemer =
         , pure Burning
         ]
 
+genRequestAction :: Gen RequestAction
+genRequestAction =
+    oneof
+        [ Update <$> listOf genProofStep
+        , pure Rejected
+        ]
+
 genUpdateRedeemer :: Gen UpdateRedeemer
 genUpdateRedeemer =
     oneof
         [ pure End
         , Contribute <$> genTxOutRef
-        , Modify <$> listOf (listOf genProofStep)
+        , Modify <$> listOf genRequestAction
         , Retract <$> genTxOutRef
-        , pure Reject
         ]
 
 -- ---------------------------------------------------------
@@ -273,6 +279,18 @@ spec = do
             $ constrIndex Burning
             `shouldBe` 2
 
+    describe "RequestAction" $ do
+        it "roundtrips via ToData/FromData"
+            $ property
+            $ forAll genRequestAction roundtrips
+        it "Update uses constructor 0"
+            $ property
+            $ forAll (Update <$> listOf genProofStep)
+            $ \x -> constrIndex x === 0
+        it "Rejected uses constructor 1"
+            $ constrIndex Rejected
+            `shouldBe` 1
+
     describe "UpdateRedeemer" $ do
         it "roundtrips via ToData/FromData"
             $ property
@@ -287,15 +305,16 @@ spec = do
         it "Modify uses constructor 2"
             $ property
             $ forAll
-                (Modify <$> listOf (listOf genProofStep))
+                (Modify <$> listOf genRequestAction)
             $ \x -> constrIndex x === 2
         it "Retract uses constructor 3"
             $ property
             $ forAll (Retract <$> genTxOutRef)
             $ \x -> constrIndex x === 3
-        it "Reject uses constructor 4"
-            $ constrIndex Reject
-            `shouldBe` 4
+        it "rejects old Constr 4 encoding"
+            $ fromBuiltinData
+                (BuiltinData (Constr 4 []))
+            `shouldBe` (Nothing :: Maybe UpdateRedeemer)
 
     describe "deriveAssetName" $ do
         it "produces 32-byte output"
