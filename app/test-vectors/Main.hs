@@ -364,9 +364,29 @@ datumEncodingVectors =
         , "plutusData" .= toDataJson End
         ]
     , Aeson.object
-        [ "description" .= txt "UpdateRedeemer Reject"
+        [ "description"
+            .= txt "UpdateRedeemer Modify mixed"
         , "type" .= txt "UpdateRedeemer"
-        , "plutusData" .= toDataJson Reject
+        , "plutusData"
+            .= toDataJson
+                ( Modify
+                    [ Update
+                        [ Leaf 0 "\xaa" "\xbb"
+                        ]
+                    , Rejected
+                    , Update
+                        [ Branch 1 (BS.replicate 128 0)
+                        ]
+                    ]
+                )
+        ]
+    , Aeson.object
+        [ "description"
+            .= txt "UpdateRedeemer Modify all-reject"
+        , "type" .= txt "UpdateRedeemer"
+        , "plutusData"
+            .= toDataJson
+                (Modify [Rejected, Rejected])
         ]
     , Aeson.object
         [ "description" .= txt "OpUpdate encoding"
